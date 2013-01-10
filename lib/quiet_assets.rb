@@ -11,14 +11,19 @@ module QuietAssets
 
       # Just create an alias for call in middleware
       Rails::Rack::Logger.class_eval do
+        CALL_SEMAPHORE = Mutex.new # Effectively introduced a Global Rack lock
         def call_with_quiet_assets(env)
-          old_logger_level, level = Rails.logger.level, Logger::ERROR
-          # Increase log level because of messages that have a low level should not be displayed
-          Rails.logger.level = level if env['PATH_INFO'].start_with?(ASSETS_PREFIX)
-          call_without_quiet_assets(env)
-        ensure
-          # Return back
-          Rails.logger.level = old_logger_level
+          CALL_SEMAPHORE.synchronize do
+            begin
+              old_logger_level, level = Rails.logger.level, Logger::ERROR
+              # Increase log level because of messages that have a low level should not be displayed
+              Rails.logger.level = level if env['PATH_INFO'].start_with?(ASSETS_PREFIX)
+              call_without_quiet_assets(env)
+            ensure
+              # Return back
+              Rails.logger.level = old_logger_level
+            end
+          end
         end
         alias_method_chain :call, :quiet_assets
       end
